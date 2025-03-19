@@ -1,0 +1,1 @@
+/home/so/trabalho-2024-2025/utils/parte-1/so_2024_trab1_validator/manutencao.sh
