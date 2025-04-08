@@ -102,7 +102,23 @@ void s1_1_ObtemDimensaoParque(int argc, char *argv[], int *pdimensaoMaximaParque
 void s1_2_CriaBD(int dimensaoMaximaParque, Estacionamento **plugaresEstacionamento) {
     so_debug("< [@param dimensaoMaximaParque:%d]", dimensaoMaximaParque);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+     /** 
+        EXPLICAÇÃO CÓDIGO:
+        * Primeiro, temos que alocar espaço de memória para o array plugaresEstacionamento.
+        * Para além de alocar espaço, queremos inicializá-lo com todas as posições livres.
+        * Para fazer isso, usamos o calloc -> *ptr = (castType*)calloc(n, size), permitindo assim alocar dinamicamente, 
+        conforme o nosso n (dimensaoMaximaParque), e inicializar tudo a zero.
+    */
+
+    *plugaresEstacionamento = (Estacionamento *)calloc(dimensaoMaximaParque, sizeof(Estacionamento));
+
+    if (*plugaresEstacionamento == NULL) {
+        so_error("S1.2", "Erro ao alocar memória para o parque de estacionamento");
+        exit(1);
+    }
+
+    so_success("S1.2", "Base de dados lugaresEstacionamento[] criada com sucesso");
+
 
     so_debug("> [*plugaresEstacionamento:%p]", *plugaresEstacionamento);
 }
@@ -113,7 +129,23 @@ void s1_2_CriaBD(int dimensaoMaximaParque, Estacionamento **plugaresEstacionamen
 void s1_3_ArmaSinaisServidor() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    /** 
+        EXPLICAÇÃO CÓDIGO:
+        * Para armar sinais que chegam ao processo servidor.c, usamos a função signal(sinal, handler_sinal)
+        * Neste caso vamos armar 2 sinais - ou seja vamos fazer com que o processo pai, ao receber um destes sinais,
+        saiba como tratá-los
+        * 1º sinal - SIGINT (sinal enviado ao processo quando é pressionado "CTRL+C" - por default, o processo termina
+        ao receber este sinal)
+        * 2º sinal - SIGCHLD (sinal enviado ao processo quando um dos processos filhos termina - por default, o sinal é ignorado)
+    */
+
+    // armar o sinal para reagir de acordo com s3_TrataCtrlC (handler do sinal)
+    signal(SIGINT, s3_TrataCtrlC);
+
+    // armar o sinal para reagir de acordo com s5_TrataTerminouServidorDedicado (handler do sinal)
+    signal(SIGCHLD, s5_TrataTerminouServidorDedicado);
+
+    // dúvida - Como devo tratar so_error ("S1.3", "msg erro") e so_success ("S1.3", "msg sucesso") neste passo
 
     so_debug(">");
 }
