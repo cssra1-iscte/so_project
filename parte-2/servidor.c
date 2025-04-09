@@ -157,8 +157,49 @@ void s1_3_ArmaSinaisServidor() {
 void s1_4_CriaFifoServidor(char *filenameFifoServidor) {
     so_debug("< [@param filenameFifoServidor:%s]", filenameFifoServidor);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    /** 
+        EXPLICAÇÃO CÓDIGO:
+        * O 1º passo é verificar se o FIFO existe, pois caso exista, temos que o apagar recorrendo ao unlink().
+        Para isso recorremos à estrutura stat.
+        A função stat() vai procurar no sistema de ficheiros (disco) se existe o ficheiro com o path indicado. 
+        Se stat(filenameFifoServidor, &st) == 0 --> quer dizer que existe um ficheiro (seja ele de que tipo for) que a 
+        estrutura st foi preenchida com os dados desse ficheiro e a função retorna 0.
+        Se o output for um número < 0, então o ficheiro não existe. 
+        * Ao verificar que existe um ficheiro no path filenameFifoServidor, então usamos S_ISFIFO para validar 
+        se o ficheiro é um FIFO.
+        * Se for um FIFO, procedemos ao unlink(filenameFifoServidor). 
+        Devemos sempre validar se as operações foram bem sucedidas com um if.
+        * Após garantirmos que não existe nenhum FIFO associado ao pointer *filenameFifoServidor,
+        então criamos um FIFO recorrendo ao mkfifo, validando sempre com um if se a operação foi bem sucedida. 
+    */
 
+    struct stat st;
+
+    //verifica se o ficheiro já existe
+    if (stat(filenameFifoServidor, &st) == 0) {
+        if (!S_ISFIFO(st.st_mode)) {
+            so_error("S1.4", "O ficheiro existe mas não é do TIPO FIFO");
+            exit(1);
+        } else {
+            if (unlink(filenameFifoServidor) == 0) {
+                printf("Successfully removed file %s.\n", filenameFifoServidor);
+                so_success("S1.4", "existia FIFO anterior e foi eliminado com sucesso");
+            } else {
+                printf("Unable to remove file %s: %s\n", filenameFifoServidor, strerror(errno));
+                so_error("S1.4", "Erro ao remover ficheiro FIFO");
+                exit(1);
+            }
+        }
+    }
+
+    //O código passa para aqui se o ficheiro FIFO não existir, ou caso tenha existindo, foi apagado no passo anterior.
+    if (mkfifo(filenameFifoServidor, 0666) == -1) {
+        so_error("S1.4", "Erro ao criar FIFO");
+        exit(1);
+    } else {
+        so_success("S1.4", "FIFO criado com sucesso");
+    }
+    
     so_debug(">");
 }
 
