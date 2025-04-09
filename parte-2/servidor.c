@@ -214,7 +214,7 @@ void s2_MainServidor() {
     so_debug("<");
 
     FILE *fFifoServidor;
-    while (TRUE) { 
+    while (TRUE) { //CICLO 1
         s2_1_AbreFifoServidor(FILE_REQUESTS, &fFifoServidor);
         s2_2_LePedidosFifoServidor(fFifoServidor);
         sleep(10);  // TEMPORÁRIO, os alunos deverão comentar este statement apenas
@@ -232,9 +232,31 @@ void s2_MainServidor() {
 void s2_1_AbreFifoServidor(char *filenameFifoServidor, FILE **pfFifoServidor) {
     so_debug("< [@param filenameFifoServidor:%s]", filenameFifoServidor);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+
+    // Abre o FIFO para leitura
+    int fd = open(filenameFifoServidor, O_RDONLY);
+    if (fd == -1) {
+        so_error("S2.1", "Erro ao abrir FIFO Servidor");
+        exit(1);
+    }
+
+
+*pfFifoServidor = fdopen(fd, "r");
+    if (*pfFifoServidor == NULL) {
+        so_error("S2.1", "Erro ao associar descritor com FILE*");
+        close(fd);
+        exit(1);
+    }
+    
+    so_success("S2.1", "FIFO aberto em modo LEITURA com sucesso");
 
     so_debug("> [*pfFifoServidor:%p]", *pfFifoServidor);
+
+    /*ATENÇÃO:
+    O processo bloqueia aqui até haver um canal de escrita do outro lado do pipe a escrever.
+    Por isso é que ao correr o servidor (./servidor) o programa fica bloqueado em:
+    @DEBUG:servidor.c:233:s2_1_AbreFifoServidor(): [< [@param filenameFifoServidor:server.fifo]]
+    */          
 }
 
 /**
