@@ -314,8 +314,10 @@ int s2_2_1_LePedido(FILE *fFifoServidor, Estacionamento *pclientRequest) {
     
 
     so_debug("> [naoHaMaisPedidos:%d, *pclientRequest:[%s:%s:%c:%s:%d.%d]]", naoHaMaisPedidos, pclientRequest->viatura.matricula, pclientRequest->viatura.pais, pclientRequest->viatura.categoria, pclientRequest->viatura.nomeCondutor, pclientRequest->pidCliente, pclientRequest->pidServidorDedicado);
+    }
+
     return naoHaMaisPedidos;
-}
+    
 }
 
 /**
