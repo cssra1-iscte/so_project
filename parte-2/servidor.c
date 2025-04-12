@@ -105,9 +105,9 @@ void s1_2_CriaBD(int dimensaoMaximaParque, Estacionamento **plugaresEstacionamen
      /** 
         EXPLICAÇÃO CÓDIGO:
         * Primeiro, temos que alocar espaço de memória para o array plugaresEstacionamento.
-        * Para além de alocar espaço, queremos inicializá-lo com todas as posições livres.
+        * Para além de alocar espaço, queremos que para cada posição do array, Estacionamento.pidCliente=DISPONIVEL
         * Para fazer isso, usamos o calloc -> *ptr = (castType*)calloc(n, size), permitindo assim alocar dinamicamente, 
-        conforme o nosso n (dimensaoMaximaParque), e inicializar tudo a zero.
+        conforme o nosso n (dimensaoMaximaParque) e, inicializar todas as posições a zero. 
     */
 
     *plugaresEstacionamento = (Estacionamento *)calloc(dimensaoMaximaParque, sizeof(Estacionamento));
@@ -115,6 +115,12 @@ void s1_2_CriaBD(int dimensaoMaximaParque, Estacionamento **plugaresEstacionamen
     if (*plugaresEstacionamento == NULL) {
         so_error("S1.2", "Erro ao alocar memória para o parque de estacionamento");
         exit(1);
+    }
+
+    //fazer for para percorrer cada posição do array plugaresEstacionamento, 
+    // colocado Estacionamento.pidCliente = DISPONIVEL
+    for (int i = 0; i < dimensaoMaximaParque; i++) {
+        (*plugaresEstacionamento)[i].pidCliente = DISPONIVEL;
     }
 
     so_success("S1.2", "Base de dados lugaresEstacionamento[] criada com sucesso");
@@ -180,7 +186,7 @@ void s1_4_CriaFifoServidor(char *filenameFifoServidor) {
         if (!S_ISFIFO(st.st_mode)) {
             so_error("S1.4", "O ficheiro existe mas não é do TIPO FIFO");
             exit(1);
-        } else {
+        } else { 
             if (unlink(filenameFifoServidor) == 0) {
                 printf("Successfully removed file %s.\n", filenameFifoServidor);
                 so_success("S1.4", "existia FIFO anterior e foi eliminado com sucesso");
@@ -191,6 +197,7 @@ void s1_4_CriaFifoServidor(char *filenameFifoServidor) {
             }
         }
     }
+    
 
     //O código passa para aqui se o ficheiro FIFO não existir, ou caso tenha existindo, foi apagado no passo anterior.
     if (mkfifo(filenameFifoServidor, 0666) == -1) {
@@ -201,7 +208,9 @@ void s1_4_CriaFifoServidor(char *filenameFifoServidor) {
     }
     
     so_debug(">");
+
 }
+
 
 /**
  * @brief  s2_MainServidor Ler a descrição da tarefa S2 no enunciado.
@@ -215,9 +224,9 @@ void s2_MainServidor() {
 
     FILE *fFifoServidor;
     while (TRUE) { //CICLO 1
-        s2_1_AbreFifoServidor(FILE_REQUESTS, &fFifoServidor);
-        s2_2_LePedidosFifoServidor(fFifoServidor);
-        sleep(10);  // TEMPORÁRIO, os alunos deverão comentar este statement apenas
+        s2_1_AbreFifoServidor(FILE_REQUESTS, &fFifoServidor); 
+        s2_2_LePedidosFifoServidor(fFifoServidor); //CICLO 2
+        //sleep(10);  // TEMPORÁRIO, os alunos deverão comentar este statement apenas
                     // depois de terem a certeza que não terão uma espera ativa
     }
 
@@ -234,21 +243,15 @@ void s2_1_AbreFifoServidor(char *filenameFifoServidor, FILE **pfFifoServidor) {
 
 
     // Abre o FIFO para leitura
-    int fd = open(filenameFifoServidor, O_RDONLY);
-    if (fd == -1) {
+    *pfFifoServidor = fopen(filenameFifoServidor, "rb");
+    printf("cheguei aqui\n");
+    if (*pfFifoServidor == NULL) {
         so_error("S2.1", "Erro ao abrir FIFO Servidor");
         exit(1);
     }
 
-
-*pfFifoServidor = fdopen(fd, "r");
-    if (*pfFifoServidor == NULL) {
-        so_error("S2.1", "Erro ao associar descritor com FILE*");
-        close(fd);
-        exit(1);
-    }
+    so_success("S2.1", "Abertura de FIFO em modo LEITURA com sucesso");
     
-    so_success("S2.1", "FIFO aberto em modo LEITURA com sucesso");
 
     so_debug("> [*pfFifoServidor:%p]", *pfFifoServidor);
 
@@ -270,7 +273,7 @@ void s2_2_LePedidosFifoServidor(FILE *fFifoServidor) {
     int terminaCiclo2 = FALSE;
     while (TRUE) {
         terminaCiclo2 = s2_2_1_LePedido(fFifoServidor, &clientRequest);
-        if (terminaCiclo2)
+        if (terminaCiclo2) //IF (terminaCiclo2 = TRUE) // o resultado vem da variável "naoHaMaisPedidos"
             break;
         s2_2_2_ProcuraLugarDisponivelBD(clientRequest, lugaresEstacionamento, dimensaoMaximaParque, &indexClienteBD);
         s2_2_3_CriaServidorDedicado(lugaresEstacionamento, indexClienteBD);
@@ -289,10 +292,30 @@ int s2_2_1_LePedido(FILE *fFifoServidor, Estacionamento *pclientRequest) {
     int naoHaMaisPedidos = TRUE;
     so_debug("< [@param fFifoServidor:%p]", fFifoServidor);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // O processo principal servidor.c vai "tentar" ler 1 bloco com o tamanho de um 
+    // do tipo "Estacionamento" a partir do FIFO fFifoServidor (aberto em modo leitura) e guarda-o na variável *pclientRequest
+    size_t dadosLidos = fread(pclientRequest, sizeof(Estacionamento), 1, fFifoServidor);
+
+    if (dadosLidos == 1) {
+        // Se há dados para ler, a flag naoHaMaisPedidos deixa de ser verdadeira, passando a FALSE
+        naoHaMaisPedidos = FALSE;
+        so_success("S2.2.1", "Li Pedido do FIFO");
+    } else {
+        // Não detetando nada para ler, verifica que se chegou ao fim do ficheiro (EOF)
+        if (feof(fFifoServidor)) {
+            // se sim, então fecha-se o FIFO
+            fclose(fFifoServidor);
+            so_success("S2.2.1", "Não há mais registos no FIFO");
+        } else {
+            //se não há dados, nem se chega ao fim no FIFO, então existem problemas com a leitura em geral
+            so_error("S2.2.1", "Erro ao ler do FIFO");
+            exit(1);
+        }
+    
 
     so_debug("> [naoHaMaisPedidos:%d, *pclientRequest:[%s:%s:%c:%s:%d.%d]]", naoHaMaisPedidos, pclientRequest->viatura.matricula, pclientRequest->viatura.pais, pclientRequest->viatura.categoria, pclientRequest->viatura.nomeCondutor, pclientRequest->pidCliente, pclientRequest->pidServidorDedicado);
     return naoHaMaisPedidos;
+}
 }
 
 /**
