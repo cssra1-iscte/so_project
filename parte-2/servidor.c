@@ -150,7 +150,7 @@ void s1_3_ArmaSinaisServidor() {
 
     // armar o sinal para reagir de acordo com s5_TrataTerminouServidorDedicado (handler do sinal)
     signal(SIGCHLD, s5_TrataTerminouServidorDedicado);
-
+    
     // dúvida - Como devo tratar so_error ("S1.3", "msg erro") e so_success ("S1.3", "msg sucesso") neste passo
 
     so_debug(">");
@@ -270,7 +270,7 @@ void s2_1_AbreFifoServidor(char *filenameFifoServidor, FILE **pfFifoServidor) {
 void s2_2_LePedidosFifoServidor(FILE *fFifoServidor) {
     so_debug("<");
 
-    int terminaCiclo2 = FALSE;
+    int terminaCiclo2 = FALSE; //int 0
     while (TRUE) {
         terminaCiclo2 = s2_2_1_LePedido(fFifoServidor, &clientRequest);
         if (terminaCiclo2) //IF (terminaCiclo2 = TRUE) // o resultado vem da variável "naoHaMaisPedidos"
@@ -289,7 +289,7 @@ void s2_2_LePedidosFifoServidor(FILE *fFifoServidor) {
  * @return TRUE se não conseguiu ler um pedido porque o FIFO não tem mais pedidos.
  */
 int s2_2_1_LePedido(FILE *fFifoServidor, Estacionamento *pclientRequest) {
-    int naoHaMaisPedidos = TRUE;
+    int naoHaMaisPedidos = TRUE; //int 1
     so_debug("< [@param fFifoServidor:%p]", fFifoServidor);
 
     // O processo principal servidor.c vai "tentar" ler 1 bloco com o tamanho de um 
@@ -317,8 +317,8 @@ int s2_2_1_LePedido(FILE *fFifoServidor, Estacionamento *pclientRequest) {
     }
 
     return naoHaMaisPedidos;
-    
-}
+
+}   
 
 /**
  * @brief  s2_2_2_ProcuraLugarDisponivelBD Ler a descrição da tarefa S2.2.2 no enunciado
@@ -330,7 +330,20 @@ int s2_2_1_LePedido(FILE *fFifoServidor, Estacionamento *pclientRequest) {
 void s2_2_2_ProcuraLugarDisponivelBD(Estacionamento clientRequest, Estacionamento *lugaresEstacionamento, int dimensaoMaximaParque, int *pindexClienteBD) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d], lugaresEstacionamento:%p, dimensaoMaximaParque:%d]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado, lugaresEstacionamento, dimensaoMaximaParque);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    *pindexClienteBD = -1; // valor default se não for encontrado nenhum lugar disponível
+
+    // procura-se no array de Estacionamentos se existem lugares disponíveis para atender ao pedido do Cliente.
+    // Percorre-se cada posição do array à procura de Estacionamento.pidCliente=DISPONIVEL
+    for (int i = 0; i < dimensaoMaximaParque; i++) {
+        // se o pidCliente associada à posição for DISPONIVEL, aloca a essa posição o Estacionamento = clientRequest
+        if (lugaresEstacionamento[i].pidCliente == DISPONIVEL) {
+            lugaresEstacionamento[i] = clientRequest; // reserva o lugar com as informações do cliente
+            *pindexClienteBD = i; //atualiza o valor da posição para saber o lugar do array ocupado
+
+            so_success("S2.2.2", "Reservei Lugar: %d", i);
+            break; //interrompe o for ao encontrar a primeira posição i livre.
+        }
+    }
 
     so_debug("> [*pindexClienteBD:%d]", *pindexClienteBD);
 }
@@ -343,7 +356,35 @@ void s2_2_2_ProcuraLugarDisponivelBD(Estacionamento clientRequest, Estacionament
 void s2_2_3_CriaServidorDedicado(Estacionamento *lugaresEstacionamento, int indexClienteBD) {
     so_debug("< [@param lugaresEstacionamento:%p, indexClienteBD:%d]", lugaresEstacionamento, indexClienteBD);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    //criação do processo filho
+    pid_t pid = fork();
+
+    //se o pid for inferior a 0 -> erro ao criar processo
+    if (pid < 0) {
+        so_error("S2.2.3","Erro ao criar processo Servidor Dedicado");
+        return; //não encerra o servidor, mas sim volta para o momento anterior à chamada da função
+    }
+    // se o pid for 0, então as tarefas são executadas pelo procesos filho
+    if (pid == 0) {
+        //obtém o id do processo do filho
+        pid_t pidServidorDedicado = getpid();
+        so_success("S2.2.3", "SD: Nasci com PID %d", pidServidorDedicado);
+        
+        // o processo filho executa a tarefa em sd7
+        sd7_MainServidorDedicado(); 
+
+    // Se for >0, então é o processo api, e executa o código abaixo.
+    } else {
+
+       
+        if (indexClienteBD >= 0 && indexClienteBD < dimensaoMaximaParque) {
+            lugaresEstacionamento[indexClienteBD].pidServidorDedicado = pid;
+        }
+
+        so_success("S2.2.3","Servidor: Iniciei SD %d", pid);
+
+        // Retorna para o ciclo no passo S2.2 (nada para fazer aqui, função termina)
+    }
 
     so_debug(">");
 }
@@ -355,7 +396,23 @@ void s2_2_3_CriaServidorDedicado(Estacionamento *lugaresEstacionamento, int inde
 void s3_TrataCtrlC(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    so_success("S3", "Servidor: Start Shutdown");
+
+    for (int i = 0; i < dimensaoMaximaParque; i++) {
+        if (lugaresEstacionamento[i].pidCliente != DISPONIVEL) {
+            int pidSD = lugaresEstacionamento[i].pidServidorDedicado;
+            if (pidSD > 0) {
+                int envio = kill(pidSD, SIGUSR2);  // Envia sinal ao Servidor Dedicado
+                if (envio == -1) {
+                    so_error("S3", "Falha ao enviar SIGUSR2 ao SD PID %d", pidSD);
+                } else {
+                    printf("S3: Enviado SIGUSR2 ao SD PID %d\n", pidSD);
+                }
+            }
+        }
+    }
+
+    s4_EncerraServidor(FILE_REQUESTS);
 
     so_debug(">");
 }
@@ -367,7 +424,15 @@ void s3_TrataCtrlC(int sinalRecebido) {
 void s4_EncerraServidor(char *filenameFifoServidor) {
     so_debug("< [@param filenameFifoServidor:%s]", filenameFifoServidor);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    //tenta remover o FIFO, o resultado de int unlink() for !=0, dá erro
+    if (unlink(filenameFifoServidor) == -1) {
+        so_error("S4", "Erro ao remover FIFO %s", filenameFifoServidor);
+        exit(1); //terminou com erro
+    } else {
+        so_success("S4", "Servidor: End Shutdown");
+        exit(0); //terminou sem erro
+    }
+
 
     so_debug(">");
 }
@@ -379,7 +444,16 @@ void s4_EncerraServidor(char *filenameFifoServidor) {
 void s5_TrataTerminouServidorDedicado(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    int stat;
+    pid_t pidServidorDedicado;
+    
+    while ((pidServidorDedicado = waitpid(-1, &stat, WNOHANG)) > 0) {
+  
+        if (WIFEXITED(stat)) {
+            printf("%5d - Child process # %d, PID = %d ended\n", getpid(), WEXITSTATUS(stat), pidServidorDedicado); 
+            so_success("S5","Servidor: Confirmo que terminou o SD %d", pidServidorDedicado);
+        }  
+    }
 
     so_debug(">");
 }
