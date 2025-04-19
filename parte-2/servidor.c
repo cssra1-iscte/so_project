@@ -335,7 +335,7 @@ void s2_2_2_ProcuraLugarDisponivelBD(Estacionamento clientRequest, Estacionament
     // procura-se no array de Estacionamentos se existem lugares disponíveis para atender ao pedido do Cliente.
     // Percorre-se cada posição do array à procura de Estacionamento.pidCliente=DISPONIVEL
     for (int i = 0; i < dimensaoMaximaParque; i++) {
-        // se o pidCliente associada à posição for DISPONIVEL, aloca a essa posição o Estacionamento = clientRequest
+        // se o pidCliente associada à posição for DISPONIVEL, aloca a essa posição o Estacionamento 
         if (lugaresEstacionamento[i].pidCliente == DISPONIVEL) {
             lugaresEstacionamento[i] = clientRequest; // reserva o lugar com as informações do cliente
             *pindexClienteBD = i; //atualiza o valor da posição para saber o lugar do array ocupado
@@ -362,7 +362,7 @@ void s2_2_3_CriaServidorDedicado(Estacionamento *lugaresEstacionamento, int inde
     //se o pid for inferior a 0 -> erro ao criar processo
     if (pid < 0) {
         so_error("S2.2.3","Erro ao criar processo Servidor Dedicado");
-        return; //não encerra o servidor, mas sim volta para o momento anterior à chamada da função
+        return; 
     }
     // se o pid for 0, então as tarefas são executadas pelo procesos filho
     if (pid == 0) {
@@ -466,8 +466,8 @@ void sd7_MainServidorDedicado() {
     so_debug("<");
 
     // sd7_IniciaServidorDedicado:
-    sd7_1_ArmaSinaisServidorDedicado();
-    sd7_2_ValidaPidCliente(clientRequest);
+    sd7_1_ArmaSinaisServidorDedicado(); //feito
+    sd7_2_ValidaPidCliente(clientRequest); //feito
     sd7_3_ValidaLugarDisponivelBD(indexClienteBD);
 
     // sd8_ValidaPedidoCliente:
@@ -498,8 +498,23 @@ void sd7_MainServidorDedicado() {
 void sd7_1_ArmaSinaisServidorDedicado() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Armar o sinal para reagir de acordo com sd12_TrataSigusr2 (handler do sinal)
+    if(signal(SIGUSR2, sd12_TrataSigusr2) == SIG_ERR) {
+        so_error("SD7.1", "Erro ao tentar armar sinal SIGUSR2");
+        exit(1);
+    }
 
+    // Uma vez que os servidores dedicados e o servidor estão a correr na mesma shell, de forma a estes não encerrarem quando se clica em CTRL+C, 
+    // deve armar-se o sinal de forma ao servidor dedicado ignorar o sinal SIGINT. 
+    if(signal(SIGINT, SIG_IGN) == SIG_ERR) {
+        so_error("SD7.1", "Erro ao tentar armar sinal SIGINT");
+        exit(1);
+    }
+    // Armar o sinal para reagir de acordo com sd13_TrataSigusr1 (handler do sinal)
+    if(signal(SIGUSR1, sd13_TrataSigusr1) == SIG_ERR) {
+        so_error("SD7.1", "Erro ao tentar armar sinal SIGUSR1");
+        exit(1);
+    }
     so_debug(">");
 }
 
@@ -510,7 +525,12 @@ void sd7_1_ArmaSinaisServidorDedicado() {
 void sd7_2_ValidaPidCliente(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    if (clientRequest.pidCliente > 0) {
+        so_success("SD7.2", "Pid do cliente [%d] é válido.", clientRequest.pidCliente);
+    } else {
+        so_error("SD7.2", "Pid do cliente [%d] é inválid.", clientRequest.pidCliente);
+        exit(1);
+    }
 
     so_debug(">");
 }
