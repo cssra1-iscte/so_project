@@ -1,5 +1,5 @@
 /****************************************************************************************
- ** ISCTE-IUL: Trabalho prático 2 de Sistemas Operativos 2024/2025, Enunciado Versão 2+
+ ** ISCTE-IUL: Trabalho prático 2 de Sistemas Operativos 2024/2025, Enunciado Versão 4+
  **
  ** Aluno: Nº:       Nome: 
  ** Nome do Módulo: cliente.c
@@ -16,236 +16,204 @@ Estacionamento clientRequest;           // Pedido enviado do Cliente para o Serv
 int recebeuRespostaServidor = FALSE;    // Variável que determina se o Cliente já recebeu uma resposta do Servidor
 
 /**
- * @brief Processamento do processo Cliente
+ * @brief  Processamento do processo Cliente.
+ *         OS ALUNOS NÃO DEVERÃO ALTERAR ESTA FUNÇÃO.
  */
 int main () {
-    // Exemplos de chamadas às funções do Cliente:
-    // c1_IniciaCliente();
-    // c1_1_ValidaFifoServidor(FILE_REQUESTS);
-    // c1_3_ArmaSinaisCliente();
-    // c2_CheckinCliente();
-    // c2_1_InputEstacionamento(&clientRequest);
-    // FILE *fFifoServidor;
-    // c2_2_AbreFifoServidor(FILE_REQUESTS, &fFifoServidor);
-    // c2_3_EscrevePedido(fFifoServidor, clientRequest);
-    // c3_ProgramaAlarme(MAX_ESPERA);
-    // c4_EsperaRespostaServidor();
-    // c4_1_DesligaAlarme();
-    // c4_2_InputEsperaCheckout();
-    // c5_EncerraCliente();
-    // c5_1_EnviaSigusr1AoServidor(clientRequest);
-    // c5_2_EsperaRespostaServidorETermina();
-}
-
-/**
- * @brief  c1_IniciaCliente    Ler a descrição da tarefa C1 no enunciado
- * @return Success  (TRUE or FALSE)
- */
-int c1_IniciaCliente() {
-    int success = FALSE;
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // c1_IniciaCliente:
+    c1_1_ValidaFifoServidor(FILE_REQUESTS);
+    c1_2_ArmaSinaisCliente();
 
+    // c2_CheckinCliente:
+    c2_1_InputEstacionamento(&clientRequest);
+    FILE *fFifoServidor;
+    c2_2_AbreFifoServidor(FILE_REQUESTS, &fFifoServidor);
+    c2_3_EscrevePedido(fFifoServidor, clientRequest);
+
+    c3_ProgramaAlarme(MAX_ESPERA);
+
+    // c4_AguardaRespostaServidor:
+    c4_1_EsperaRespostaServidor();
+    c4_2_DesligaAlarme();
+    c4_3_InputEsperaCheckout();
+
+    c5_EncerraCliente();
+
+    so_error("Cliente", "O programa nunca deveria ter chegado a este ponto!");
     so_debug(">");
-    return success;
 }
 
 /**
- * @brief  c1_1_ValidaFifoServidor      Ler a descrição da tarefa C1.1 no enunciado
+ * @brief  c1_1_ValidaFifoServidor Ler a descrição da tarefa C1.1 no enunciado
  * @param  filenameFifoServidor (I) O nome do FIFO do servidor (i.e., FILE_REQUESTS)
- * @return Success  (TRUE or FALSE)
  */
-int c1_1_ValidaFifoServidor(char *filenameFifoServidor) {
-    int success = FALSE;
+void c1_1_ValidaFifoServidor(char *filenameFifoServidor) {
     so_debug("< [@param filenameFifoServidor:%s]", filenameFifoServidor);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    struct stat st;
+    // verifica se o ficheiro já existe
+    if (stat(filenameFifoServidor, &st) == 0) {
+        // verifica se, existindo, se é de organização FIFO
+        if (!S_ISFIFO(st.st_mode)) {
+            so_error("C1.1", "O ficheiro existe mas não é do TIPO FIFO");
+            exit(1);
+        }
+        
+        so_success("C1.1", "Ficheiro FIFO existe");
+
+    } else {
+        so_error("C1.1", "Ficheiro não existe. É necessário correr o servidor primeiro");
+        exit(1);
+    }
+    
 
     so_debug(">");
-    return success;
 }
 
 /**
- * @brief  c1_3_ArmaSinaisCliente      Ler a descrição da tarefa C1.3 no enunciado
- * @return Success  (TRUE or FALSE)
+ * @brief  c1_2_ArmaSinaisCliente Ler a descrição da tarefa C1.3 no enunciado
  */
-int c1_3_ArmaSinaisCliente() {
-    int success = FALSE;
+void c1_2_ArmaSinaisCliente() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // arma sinal SIGUSR1 - serve para o Servidor Dedicado indicar que o check-in foi concluído com sucesso
+    signal(SIGUSR1, c6_TrataSigusr1);
 
     so_debug(">");
-    return success;
 }
 
 /**
- * @brief  c2_CheckinCliente      Ler a descrição da tarefa C2 no enunciado
- * @return Success  (TRUE or FALSE)
- */
-int c2_CheckinCliente() {
-    int success = FALSE;
-    so_debug("<");
-
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
-
-    so_debug(">");
-    return success;
-}
-
-/**
- * @brief  c2_1_InputEstacionamento      Ler a descrição da tarefa C2.1 no enunciado
+ * @brief  c2_1_InputEstacionamento Ler a descrição da tarefa C2.1 no enunciado
  * @param  pclientRequest (O) pedido a ser enviado por este Cliente ao Servidor
- * @return Success  (TRUE or FALSE)
  */
-int c2_1_InputEstacionamento(Estacionamento *pclientRequest) {
-    int success = FALSE;
+void c2_1_InputEstacionamento(Estacionamento *pclientRequest) {
     so_debug("<");
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug("> [*pclientRequest:[%s:%s:%c:%s:%d:%d]]", pclientRequest->viatura.matricula, pclientRequest->viatura.pais, pclientRequest->viatura.categoria, pclientRequest->viatura.nomeCondutor, pclientRequest->pidCliente, pclientRequest->pidServidorDedicado);
-    return success;
 }
 
 /**
- * @brief  c2_2_AbreFifoServidor      Ler a descrição da tarefa C2.2 no enunciado
+ * @brief  c2_2_AbreFifoServidor Ler a descrição da tarefa C2.2 no enunciado
  * @param  filenameFifoServidor (I) O nome do FIFO do servidor (i.e., FILE_REQUESTS)
  * @param  pfFifoServidor (O) descritor aberto do ficheiro do FIFO do servidor
- * @return Success  (TRUE or FALSE)
  */
-int c2_2_AbreFifoServidor(char *filenameFifoServidor, FILE **pfFifoServidor) {
-    int success = FALSE;
+void c2_2_AbreFifoServidor(char *filenameFifoServidor, FILE **pfFifoServidor) {
     so_debug("< [@param filenameFifoServidor:%s]", filenameFifoServidor);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    *pfFifoServidor = fopen(filenameFifoServidor, "wb");
+    printf("cheguei aqui\n");
+    if (*pfFifoServidor == NULL) {
+        so_error("S2.1", "Erro ao abrir FIFO Servidor");
+        exit(1);
+    }
+
+    so_success("S2.1", "Abertura de FIFO em modo ESCRITA com sucesso");
+    
 
     so_debug("> [*pfFifoServidor:%p]", *pfFifoServidor);
-    return success;
 }
 
 /**
- * @brief  c2_3_EscrevePedido      Ler a descrição da tarefa C2.3 no enunciado
+ * @brief  c2_3_EscrevePedido Ler a descrição da tarefa C2.3 no enunciado
  * @param  fFifoServidor (I) descritor aberto do ficheiro do FIFO do servidor
  * @param  clientRequest (I) pedido a ser enviado por este Cliente ao Servidor
- * @return Success  (TRUE or FALSE)
  */
-int c2_3_EscrevePedido(FILE *fFifoServidor, Estacionamento clientRequest) {
-    int success = FALSE;
+void c2_3_EscrevePedido(FILE *fFifoServidor, Estacionamento clientRequest) {
     so_debug("< [@param fFifoServidor:%p, clientRequest:[%s:%s:%c:%s:%d:%d]]", fFifoServidor, clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug(">");
-    return success;
 }
 
 /**
- * @brief  c3_ProgramaAlarme      Ler a descrição da tarefa C3 no enunciado
+ * @brief  c3_ProgramaAlarme Ler a descrição da tarefa C3 no enunciado
  * @param  segundos (I) número de segundos a programar no alarme
- * @return Success  (TRUE or FALSE)
  */
-int c3_ProgramaAlarme(int segundos) {
-    int success = FALSE;
+void c3_ProgramaAlarme(int segundos) {
     so_debug("< [@param segundos:%d]", segundos);
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug(">");
-    return success;
 }
 
 /**
- * @brief  c4_EsperaRespostaServidor      Ler a descrição da tarefa C4 no enunciado
- * @return Success  (TRUE or FALSE)
+ * @brief  c4_1_EsperaRespostaServidor Ler a descrição da tarefa C4 no enunciado
  */
-int c4_EsperaRespostaServidor() {
-    int success = FALSE;
+void c4_1_EsperaRespostaServidor() {
     so_debug("<");
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug(">");
-    return success;
 }
 
 /**
- * @brief  c4_1_DesligaAlarme      Ler a descrição da tarefa C4.1 no enunciado
- * @return Success  (TRUE or FALSE)
+ * @brief  c4_2_DesligaAlarme Ler a descrição da tarefa C4.1 no enunciado
  */
-int c4_1_DesligaAlarme() {
-    int success = FALSE;
+void c4_2_DesligaAlarme() {
     so_debug("<");
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug(">");
-    return success;
 }
 
 /**
- * @brief  c4_2_InputEsperaCheckout      Ler a descrição da tarefa C4.2 no enunciado
- * @return Success  (TRUE or FALSE)
+ * @brief  c4_3_InputEsperaCheckout Ler a descrição da tarefa C4.2 no enunciado
  */
-int c4_2_InputEsperaCheckout() {
-    int success = FALSE;
+void c4_3_InputEsperaCheckout() {
     so_debug("<");
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug(">");
-    return success;
 }
 
 /**
  * @brief  c5_EncerraCliente      Ler a descrição da tarefa C5 no enunciado
- * @return Success  (TRUE or FALSE)
  */
-int c5_EncerraCliente() {
-    int success = FALSE;
+void c5_EncerraCliente() {
     so_debug("<");
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug(">");
-    return success;
 }
 
 /**
  * @brief  c5_1_EnviaSigusr1AoServidor      Ler a descrição da tarefa C5.1 no enunciado
  * @param  clientRequest (I) pedido a ser enviado por este Cliente ao Servidor
- * @return Success  (TRUE or FALSE)
  */
-int c5_1_EnviaSigusr1AoServidor(Estacionamento clientRequest) {
-    int success = FALSE;
+void c5_1_EnviaSigusr1AoServidor(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug(">");
-    return success;
 }
 
 /**
  * @brief  c5_2_EsperaRespostaServidorETermina      Ler a descrição da tarefa C5.2 no enunciado
- * @return Success  (TRUE or FALSE)
  */
-int c5_2_EsperaRespostaServidorETermina() {
-    int success = FALSE;
+void c5_2_EsperaRespostaServidorETermina() {
     so_debug("<");
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
     so_debug(">");
-    return success;
 }
 
 /**
  * @brief  c6_TrataSigusr1      Ler a descrição da tarefa C6 no enunciado
  * @param  sinalRecebido (I) número do sinal que é recebido por esta função (enviado pelo SO)
  */
-void c6_TrataSigusr1(int sinalRecebido) {
+void c6_TrataSigusr1(int sinalRecebido, siginfo_t *siginfo, void *context) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
@@ -280,7 +248,6 @@ void c8_TrataCtrlC(int sinalRecebido) {
 /**
  * @brief  c9_TrataAlarme      Ler a descrição da tarefa c9 no enunciado
  * @param  sinalRecebido (I) número do sinal que é recebido por esta função (enviado pelo SO)
- * @return Success  (TRUE or FALSE)
  */
 void c9_TrataAlarme(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
