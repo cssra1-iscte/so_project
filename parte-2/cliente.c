@@ -79,7 +79,35 @@ void c1_2_ArmaSinaisCliente() {
     so_debug("<");
 
     // arma sinal SIGUSR1 - serve para o Servidor Dedicado indicar que o check-in foi concluído com sucesso
-    signal(SIGUSR1, c6_TrataSigusr1);
+    //não dá para usar o signal porque o manipulador de sinal tem que ter a assinatura estendida
+    struct sigaction sa;
+    sa.sa_sigaction = c6_TrataSigusr1; // Define o manipulador de sinal
+    sa.sa_flags = SA_SIGINFO;          // Indica que o manipulador usa a assinatura estendida
+    sigemptyset(&sa.sa_mask);          // Limpa a máscara de sinais
+    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+        so_error("C1.2", "Erro ao armar SIGUSR1");
+        exit(1);
+    }
+
+    // Arma sinal SIGHUP - Check-in não teve sucesso ou estacionamento terminou
+    if (signal(SIGHUP, c7_TrataSighup) == SIG_ERR) {
+        so_error("C1.2", "Erro ao armar SIGHUP");
+        exit(1);
+    }
+
+    // Arma sinal SIGINT - Atalho <CTRL+C>
+    if (signal(SIGINT, c8_TrataCtrlC) == SIG_ERR) {
+        so_error("C1.2", "Erro ao armar SIGINT");
+        exit(1);
+    }
+
+    // Arma sinal SIGALRM - Timeout no check-in
+    if (signal(SIGALRM, c9_TrataAlarme) == SIG_ERR) {
+        so_error("C1.2", "Erro ao armar SIGALRM");
+        exit(1);
+    }
+
+    so_success("C1.2", "Armação de sinais com sucesso");
 
     so_debug(">");
 }
@@ -91,7 +119,55 @@ void c1_2_ArmaSinaisCliente() {
 void c2_1_InputEstacionamento(Estacionamento *pclientRequest) {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    printf("Park-IUL: Check-in Viatura\n----------------------------\n");
+
+    // Matrícula
+    printf("Introduza a matrícula da viatura: ");
+    so_gets(pclientRequest->viatura.matricula, sizeof(pclientRequest->viatura.matricula));
+    if (strlen(pclientRequest->viatura.matricula) == 0 || strspn(pclientRequest->viatura.matricula, " ") == strlen(pclientRequest->viatura.matricula)) {
+        so_error("C2.1", "Campo Matrícula inválido");
+        exit(1);
+    }
+
+    // País
+    printf("Introduza o país da viatura: ");
+    so_gets(pclientRequest->viatura.pais, sizeof(pclientRequest->viatura.pais));
+    if (strlen(pclientRequest->viatura.pais) == 0 || strspn(pclientRequest->viatura.pais, " ") == strlen(pclientRequest->viatura.pais)) {
+        so_error("C2.1", "Campo País inválido");
+        exit(1);
+    }
+
+    // Categoria
+    char categoriaTemp[4];
+    printf("Introduza a categoria da viatura: ");
+    so_gets(categoriaTemp, sizeof(categoriaTemp));
+    if (strlen(categoriaTemp) == 0 || strspn(categoriaTemp, " ") == strlen(categoriaTemp)) {
+        so_error("C2.1", "Campo Categoria inválido");
+        exit(1);
+    }
+    pclientRequest->viatura.categoria = categoriaTemp[0];
+
+    // Nome do condutor
+    printf("Introduza o nome do condutor: ");
+    so_gets(pclientRequest->viatura.nomeCondutor, sizeof(pclientRequest->viatura.nomeCondutor));
+    if (strlen(pclientRequest->viatura.nomeCondutor) == 0 || strspn(pclientRequest->viatura.nomeCondutor, " ") == strlen(pclientRequest->viatura.nomeCondutor)) {
+        so_error("C2.1", "Campo Nome do Condutor inválido");
+        exit(1);
+    }
+
+    // Preenchimento dos campos adicionais
+    pclientRequest->pidCliente = getpid();
+    pclientRequest->pidServidorDedicado = -1;
+
+    // Sucesso
+    so_success("C2.1", "%s %s %c %s %d %d",
+        pclientRequest->viatura.matricula,
+        pclientRequest->viatura.pais,
+        pclientRequest->viatura.categoria,
+        pclientRequest->viatura.nomeCondutor,
+        pclientRequest->pidCliente,
+        pclientRequest->pidServidorDedicado
+    );
 
     so_debug("> [*pclientRequest:[%s:%s:%c:%s:%d:%d]]", pclientRequest->viatura.matricula, pclientRequest->viatura.pais, pclientRequest->viatura.categoria, pclientRequest->viatura.nomeCondutor, pclientRequest->pidCliente, pclientRequest->pidServidorDedicado);
 }
@@ -99,20 +175,30 @@ void c2_1_InputEstacionamento(Estacionamento *pclientRequest) {
 /**
  * @brief  c2_2_AbreFifoServidor Ler a descrição da tarefa C2.2 no enunciado
  * @param  filenameFifoServidor (I) O nome do FIFO do servidor (i.e., FILE_REQUESTS)
- * @param  pfFifoServidor (O) descritor aberto do ficheiro do FIFO do servidor
+ * @param  pfFifoServidor (O) descritor aberto do ficheiro do FIFO do cleinye
  */
 void c2_2_AbreFifoServidor(char *filenameFifoServidor, FILE **pfFifoServidor) {
     so_debug("< [@param filenameFifoServidor:%s]", filenameFifoServidor);
 
-    *pfFifoServidor = fopen(filenameFifoServidor, "wb");
-    printf("cheguei aqui\n");
-    if (*pfFifoServidor == NULL) {
-        so_error("S2.1", "Erro ao abrir FIFO Servidor");
+    while (1) {
+        *pfFifoServidor = fopen(filenameFifoServidor, "wb");
+
+        if (*pfFifoServidor != NULL) {
+            // Sucesso na abertura
+            so_success("C2.2", "Abertura de FIFO em modo ESCRITA com sucesso");
+            break; //sai do ciclo while
+        }
+
+        // falha na abertura do FIFO em modo leitura - recebe um sinal antes de a operação terminar (Interrupted system call)
+        if (errno == EINTR) {
+            so_debug("C2.2", "Abertura interrompida por sinal, tentativa repetida.");
+            continue; //recomeça o ciclo while -> tenta abrir o FIFO de novo
+        }
+
+        // *pfFifoServidor == NULL -> erro ao abrir o FIFO
+        so_error("C2.2", "Erro ao abrir FIFO Servidor: %s", strerror(errno));
         exit(1);
     }
-
-    so_success("S2.1", "Abertura de FIFO em modo ESCRITA com sucesso");
-    
 
     so_debug("> [*pfFifoServidor:%p]", *pfFifoServidor);
 }
@@ -125,7 +211,19 @@ void c2_2_AbreFifoServidor(char *filenameFifoServidor, FILE **pfFifoServidor) {
 void c2_3_EscrevePedido(FILE *fFifoServidor, Estacionamento clientRequest) {
     so_debug("< [@param fFifoServidor:%p, clientRequest:[%s:%s:%c:%s:%d:%d]]", fFifoServidor, clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Tenta escrever no FIFO
+    size_t elementosEscritos = fwrite(&clientRequest, sizeof(Estacionamento), 1, fFifoServidor);
+
+    // Fecha o FIFO 
+    fclose(fFifoServidor);
+
+    // Valida a escrita
+    if (elementosEscritos != 1) {
+        so_error("C2.3", "Erro ao escrever no FIFO do servidor");
+        exit(1);
+    } else {
+        so_success("C2.3", "FIFO ecsrito com sucesso");
+    }
 
     so_debug(">");
 }
@@ -137,7 +235,8 @@ void c2_3_EscrevePedido(FILE *fFifoServidor, Estacionamento clientRequest) {
 void c3_ProgramaAlarme(int segundos) {
     so_debug("< [@param segundos:%d]", segundos);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    alarm(segundos); // Define alarme
+    so_success("C3", "Espera resposta em %d segundos", segundos);
 
     so_debug(">");
 }

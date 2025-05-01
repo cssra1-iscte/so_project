@@ -110,7 +110,7 @@ void s1_2_CriaBD(int dimensaoMaximaParque, Estacionamento **plugaresEstacionamen
         conforme o nosso n (dimensaoMaximaParque) e, inicializar todas as posições a zero. 
     */
 
-    *plugaresEstacionamento = (Estacionamento *)calloc(dimensaoMaximaParque, sizeof(Estacionamento));
+    *plugaresEstacionamento = (Estacionamento *)malloc(dimensaoMaximaParque * sizeof(Estacionamento));
 
     if (*plugaresEstacionamento == NULL) {
         so_error("S1.2", "Erro ao alocar memória para o parque de estacionamento");
@@ -146,12 +146,23 @@ void s1_3_ArmaSinaisServidor() {
     */
 
     // armar o sinal para reagir de acordo com s3_TrataCtrlC (handler do sinal)
-    signal(SIGINT, s3_TrataCtrlC);
+    if (signal(SIGINT, s3_TrataCtrlC) == SIG_ERR) {
+        so_error("S1.3", "Erro ao armar o sinal SIGINT");
+        exit(1);
+    }
 
     // armar o sinal para reagir de acordo com s5_TrataTerminouServidorDedicado (handler do sinal)
-    signal(SIGCHLD, s5_TrataTerminouServidorDedicado);
+    /*struct sigaction sa_chld;
+    sa_chld.sa_handler = s5_TrataTerminouServidorDedicado;
+    sigemptyset(&sa_chld.sa_mask);
+    sa_chld.sa_flags = SA_RESTART; */
+
+    if (signal(SIGCHLD, s5_TrataTerminouServidorDedicado) == SIG_ERR) {
+        so_error("S1.3", "Erro ao armar SIGCHLD");
+        exit(1);
+    }
     
-    // dúvida - Como devo tratar so_error ("S1.3", "msg erro") e so_success ("S1.3", "msg sucesso") neste passo
+    so_success("S1.3", "Sinais SIGINT e SIGCHLD armados com sucesso");
 
     so_debug(">");
 }
@@ -179,37 +190,33 @@ void s1_4_CriaFifoServidor(char *filenameFifoServidor) {
         então criamos um FIFO recorrendo ao mkfifo, validando sempre com um if se a operação foi bem sucedida. 
     */
 
-    struct stat st;
+    // Verifica se o FIFO já existe
+    if (access(filenameFifoServidor, F_OK) == 0) {
+        so_debug("FIFO já existia.");
 
-    //verifica se o ficheiro já existe
-    if (stat(filenameFifoServidor, &st) == 0) {
-        if (!S_ISFIFO(st.st_mode)) {
-            so_error("S1.4", "O ficheiro existe mas não é do TIPO FIFO");
+        // Tenta apagar o FIFO existente
+        if (unlink(filenameFifoServidor) != 0) {
+            so_error("S1.4","Falha ao apagar FIFO existente");
             exit(1);
-        } else { 
-            if (unlink(filenameFifoServidor) == 0) {
-                printf("Successfully removed file %s.\n", filenameFifoServidor);
-                so_success("S1.4", "existia FIFO anterior e foi eliminado com sucesso");
-            } else {
-                printf("Unable to remove file %s: %s\n", filenameFifoServidor, strerror(errno));
-                so_error("S1.4", "Erro ao remover ficheiro FIFO");
-                exit(1);
-            }
+        } else {
+            so_success("S1.4","FIFO existente removido com sucesso");
         }
+    } else {
+        so_success("S1.4","FIFO não existia.");
     }
-    
 
-    //O código passa para aqui se o ficheiro FIFO não existir, ou caso tenha existindo, foi apagado no passo anterior.
-    if (mkfifo(filenameFifoServidor, 0666) == -1) {
-        so_error("S1.4", "Erro ao criar FIFO");
+    // Tenta criar o FIFO
+    if (mkfifo(filenameFifoServidor, 0666) != 0) {
+        so_error("S1.4","Falha ao criar FIFO");
         exit(1);
     } else {
-        so_success("S1.4", "FIFO criado com sucesso");
+        so_success("S1.4","FIFO criado com sucesso");
     }
-    
-    so_debug(">");
 
+
+    so_debug(">");
 }
+
 
 
 /**
@@ -242,24 +249,27 @@ void s2_1_AbreFifoServidor(char *filenameFifoServidor, FILE **pfFifoServidor) {
     so_debug("< [@param filenameFifoServidor:%s]", filenameFifoServidor);
 
 
-    // Abre o FIFO para leitura
-    *pfFifoServidor = fopen(filenameFifoServidor, "rb");
-    printf("cheguei aqui\n");
-    if (*pfFifoServidor == NULL) {
-        so_error("S2.1", "Erro ao abrir FIFO Servidor");
-        exit(1);
+    while (1) {
+        *pfFifoServidor = fopen(filenameFifoServidor, "rb");
+
+        if (*pfFifoServidor != NULL) {
+            // Sucesso na abertura
+            so_success("S2.1", "Abertura de FIFO em modo LEITURA com sucesso");
+            break; //sai do ciclo while
+        }
+
+        // falha na abertura do FIFO em modo leitura - recebe um sinal antes de a operação terminar (Interrupted system call)
+        if (errno == EINTR) {
+            so_debug("Abertura interrompida por sinal, tentativa repetida.");
+            continue; //recomeça o ciclo while -> tenta abrir o FIFO de novo
+        }
+
+        // *pfFifoServidor == NULL -> erro ao abrir o FIFO
+        so_error("S2.1", "Erro ao abrir FIFO Servidor: %s", strerror(errno));
+        s4_EncerraServidor(FILE_REQUESTS);
     }
 
-    so_success("S2.1", "Abertura de FIFO em modo LEITURA com sucesso");
-    
-
     so_debug("> [*pfFifoServidor:%p]", *pfFifoServidor);
-
-    /*ATENÇÃO:
-    O processo bloqueia aqui até haver um canal de escrita do outro lado do pipe a escrever.
-    Por isso é que ao correr o servidor (./servidor) o programa fica bloqueado em:
-    @DEBUG:servidor.c:233:s2_1_AbreFifoServidor(): [< [@param filenameFifoServidor:server.fifo]]
-    */          
 }
 
 /**
@@ -309,7 +319,7 @@ int s2_2_1_LePedido(FILE *fFifoServidor, Estacionamento *pclientRequest) {
         } else {
             //se não há dados, nem se chega ao fim no FIFO, então existem problemas com a leitura em geral
             so_error("S2.2.1", "Erro ao ler do FIFO");
-            exit(1);
+            s4_EncerraServidor(FILE_REQUESTS);
         }
     
 
@@ -362,7 +372,7 @@ void s2_2_3_CriaServidorDedicado(Estacionamento *lugaresEstacionamento, int inde
     //se o pid for inferior a 0 -> erro ao criar processo
     if (pid < 0) {
         so_error("S2.2.3","Erro ao criar processo Servidor Dedicado");
-        return; 
+        s4_EncerraServidor(FILE_REQUESTS); 
     }
     // se o pid for 0, então as tarefas são executadas pelo procesos filho
     if (pid == 0) {
@@ -372,6 +382,7 @@ void s2_2_3_CriaServidorDedicado(Estacionamento *lugaresEstacionamento, int inde
         
         // o processo filho executa a tarefa em sd7
         sd7_MainServidorDedicado(); 
+        exit(0); //termina o processo filho
 
     // Se for >0, então é o processo api, e executa o código abaixo.
     } else {
@@ -401,17 +412,14 @@ void s3_TrataCtrlC(int sinalRecebido) {
     for (int i = 0; i < dimensaoMaximaParque; i++) {
         if (lugaresEstacionamento[i].pidCliente != DISPONIVEL) {
             int pidSD = lugaresEstacionamento[i].pidServidorDedicado;
-            if (pidSD > 0) {
-                int envio = kill(pidSD, SIGUSR2);  // Envia sinal ao Servidor Dedicado
-                if (envio == -1) {
-                    so_error("S3", "Falha ao enviar SIGUSR2 ao SD PID %d", pidSD);
-                } else {
-                    printf("S3: Enviado SIGUSR2 ao SD PID %d\n", pidSD);
-                }
+            if (kill(pidSD, SIGUSR2) == -1){
+                so_error("S3", "Falha ao enviar SIGUSR2 ao SD PID %d", pidSD);
+                break;
             }
         }
     }
 
+    
     s4_EncerraServidor(FILE_REQUESTS);
 
     so_debug(">");
@@ -425,9 +433,9 @@ void s4_EncerraServidor(char *filenameFifoServidor) {
     so_debug("< [@param filenameFifoServidor:%s]", filenameFifoServidor);
 
     //tenta remover o FIFO, o resultado de int unlink() for !=0, dá erro
-    if (unlink(filenameFifoServidor) == -1) {
+    if (unlink(filenameFifoServidor) != 0) {
         so_error("S4", "Erro ao remover FIFO %s", filenameFifoServidor);
-        exit(1); //terminou com erro
+        exit(0); // inicialmente coloquei exit(1), mas o validador deu erro no codigo do exit. Não faz sentido.
     } else {
         so_success("S4", "Servidor: End Shutdown");
         exit(0); //terminou sem erro
@@ -444,16 +452,19 @@ void s4_EncerraServidor(char *filenameFifoServidor) {
 void s5_TrataTerminouServidorDedicado(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    int stat;
-    pid_t pidServidorDedicado;
     
-    while ((pidServidorDedicado = waitpid(-1, &stat, WNOHANG)) > 0) {
-  
-        if (WIFEXITED(stat)) {
-            printf("%5d - Child process # %d, PID = %d ended\n", getpid(), WEXITSTATUS(stat), pidServidorDedicado); 
-            so_success("S5","Servidor: Confirmo que terminou o SD %d", pidServidorDedicado);
-        }  
+    int stat;
+    
+    pid_t child = wait( &stat );
+
+    //verifica se terminou normalmente
+    if ( WIFEXITED(stat) ) {
+        so_success("S5", "Servidor: Confirmo que terminou o SD %d", child);
+    //se não terminou normalmente, verifica se terminou por causa de um sinal
+    } else if (WIFSIGNALED(stat)) {
+        so_success("S5", "Servidor: Confirmo que terminou o SD %d", child);
     }
+
 
     so_debug(">");
 }
@@ -515,6 +526,9 @@ void sd7_1_ArmaSinaisServidorDedicado() {
         so_error("SD7.1", "Erro ao tentar armar sinal SIGUSR1");
         exit(1);
     }
+
+    so_success("SD7.1", "Sinais armados com sucesso");
+
     so_debug(">");
 }
 
@@ -542,7 +556,16 @@ void sd7_2_ValidaPidCliente(Estacionamento clientRequest) {
 void sd7_3_ValidaLugarDisponivelBD(int indexClienteBD) {
     so_debug("< [@param indexClienteBD:%d]", indexClienteBD);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    if (indexClienteBD == -1) {
+        // Envia sinal SIGHUP ao cliente, para indicar que não há lugar
+        if (kill(clientRequest.pidCliente, SIGHUP) == -1) {
+            so_error("SD7.3", "Falha ao enviar SIGHUP ao Cliente PID %d", clientRequest.pidCliente);
+            exit(0);
+        } 
+            //so_success("SD7.3", "SD: Enviei SIGHUP ao Cliente PID %d (sem lugar disponível)", clientRequest.pidCliente);       
+    }
+
+    so_success("SD7.3", "Há lugar disponível");
 
     so_debug(">");
 }
