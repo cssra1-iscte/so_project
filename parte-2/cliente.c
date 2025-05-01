@@ -210,11 +210,13 @@ void c5_2_EsperaRespostaServidorETermina() {
 }
 
 /**
- * @brief  c6_TrataSigusr1      Ler a descrição da tarefa C6 no enunciado
+ * @brief  c6_TrataSigusr1 Ler a descrição da tarefa C6 no enunciado
  * @param  sinalRecebido (I) número do sinal que é recebido por esta função (enviado pelo SO)
+ * @param  siginfo (I) informação sobre o sinal
+ * @param  context (I) contexto em que o sinal foi chamado
  */
-void c6_TrataSigusr1(int sinalRecebido, siginfo_t *siginfo, void *context) {
-    so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
+ void c6_TrataSigusr1(int sinalRecebido, siginfo_t *siginfo, void *context) {
+    so_debug("< [@param sinalRecebido:%d, siginfo:%p, context:%p]", sinalRecebido, siginfo, context);
 
     // Substituir este comentário pelo código da função a ser implementado pelo aluno
 
