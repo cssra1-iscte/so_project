@@ -301,7 +301,7 @@ void c5_EncerraCliente() {
     // Envia SIGUSR1 ao Servidor Dedicado
     c5_1_EnviaSigusr1AoServidor(clientRequest);
 
-    // Aguarda resposta do Servidor Dedicado e termina
+    // Aguarda a resposta do Servidor Dedicado e termina
     c5_2_EsperaRespostaServidorETermina();
 
     so_debug(">");

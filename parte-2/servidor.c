@@ -440,7 +440,8 @@ void s4_EncerraServidor(char *filenameFifoServidor) {
         so_success("S4", "Servidor: End Shutdown");
         exit(0); //terminou sem erro
     }
-
+    
+    //com o exit(0) em cada uma das opções, a memória é libertada não tendo de correr ao free()
 
     so_debug(">");
 }
@@ -577,7 +578,25 @@ void sd7_3_ValidaLugarDisponivelBD(int indexClienteBD) {
 void sd8_1_ValidaMatricula(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    const char *matricula = clientRequest.viatura.matricula;
+    int valida = 1; // Assume que é válida inicialmente
+
+    // Verifica cada caractere da matrícula
+    for (int i = 0; matricula[i] != '\0'; i++) {
+        if (!((matricula[i] >= 'A' && matricula[i] <= 'Z') || // Letras maiúsculas
+              (matricula[i] >= '0' && matricula[i] <= '9'))) { // Números
+            valida = 0; // Matrícula inválida
+            break;
+        }
+    }
+
+    if (!valida) {
+        so_error("SD8.1", "Matrícula inválida: %s", matricula);
+        sd11_EncerraServidorDedicado();
+    } else {
+        so_success("SD8.1", "Matrícula válida: %s", matricula);
+    }
+
 
     so_debug(">");
 }
@@ -589,7 +608,17 @@ void sd8_1_ValidaMatricula(Estacionamento clientRequest) {
 void sd8_2_ValidaPais(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    const char *pais = clientRequest.viatura.pais;
+
+    // Verifica se o código do país tem exatamente 2 caracteres
+    if (strlen(pais) != 2 || 
+        !(pais[0] >= 'A' && pais[0] <= 'Z') || // Primeiro caractere deve ser uma letra maiúscula
+        !(pais[1] >= 'A' && pais[1] <= 'Z')) { // Segundo caractere deve ser uma letra maiúscula
+        so_error("SD8.2", "Código do país inválido: %s", pais);
+        sd11_EncerraServidorDedicado();
+    } else {
+        so_success("SD8.2", "Código do país válido: %s", pais);
+    }
 
     so_debug(">");
 }
@@ -601,7 +630,12 @@ void sd8_2_ValidaPais(Estacionamento clientRequest) {
 void sd8_3_ValidaCategoria(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    if (clientRequest.viatura.categoria != 'P' && clientRequest.viatura.categoria != 'L' && clientRequest.viatura.categoria != 'M') {
+        so_error("SD8.3", "Categoria inválida: %c", clientRequest.viatura.categoria);
+        sd11_EncerraServidorDedicado();
+    } else {
+        so_success("SD8.3", "Categoria válida: %c", clientRequest.viatura.categoria);
+    }
 
     so_debug(">");
 }
@@ -613,7 +647,38 @@ void sd8_3_ValidaCategoria(Estacionamento clientRequest) {
 void sd8_4_ValidaNomeCondutor(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Abre o ficheiro _etc_passwd
+    FILE *file = fopen("_etc_passwd", "r");
+    if (!file) {
+        so_error("SD8.4", "Erro ao abrir o ficheiro _etc_passwd");
+        sd11_EncerraServidorDedicado();
+    }
+
+    char linha[256];
+    int nomeEncontrado = 0;
+
+    // Lê o ficheiro linha a linha
+    while (fgets(linha, sizeof(linha), file)) {
+        // Remove o caractere da nova linha, se existir
+        linha[strcspn(linha, "\n")] = '\0';
+
+        // Compara o nome do condutor com a linha atual
+        if (strcmp(linha, clientRequest.viatura.nomeCondutor) == 0) {
+            nomeEncontrado = 1;
+            break;
+        }
+    }
+
+    fclose(file);
+
+    // Verifica se o nome foi encontrado
+    if (nomeEncontrado) {
+        so_success("SD8.4", "Nome do condutor válido: %s", clientRequest.viatura.nomeCondutor);
+    } else {
+        so_error("SD8.4", "Nome do condutor inválido: %s", clientRequest.viatura.nomeCondutor);
+        //sd11_EncerraServidorDedicado();
+    }
+
 
     so_debug(">");
 }
@@ -624,7 +689,10 @@ void sd8_4_ValidaNomeCondutor(Estacionamento clientRequest) {
 void sd9_1_AdormeceTempoRandom() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    srand(time(NULL));
+    int tempo = so_random_between_values(1, MAX_ESPERA);
+    so_success("SD9.1", "%d", tempo);
+    sleep(tempo);
 
     so_debug(">");
 }
@@ -636,7 +704,12 @@ void sd9_1_AdormeceTempoRandom() {
 void sd9_2_EnviaSigusr1AoCliente(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    if (kill(clientRequest.pidCliente, SIGUSR1) == -1) {
+        so_error("SD9.2", "Erro ao enviar SIGUSR1 ao Cliente PID %d", clientRequest.pidCliente);
+        sd11_EncerraServidorDedicado();
+    } else {
+        so_success("SD9.2", "SD: Confirmei Cliente Lugar %d", indexClienteBD);
+    }
 
     so_debug(">");
 }
@@ -651,7 +724,18 @@ void sd9_2_EnviaSigusr1AoCliente(Estacionamento clientRequest) {
 void sd9_3_EscreveLogEntradaViatura(char *logFilename, Estacionamento clientRequest, long *pposicaoLogfile, LogItem *plogItem) {
     so_debug("< [@param logFilename:%s, clientRequest:[%s:%s:%c:%s:%d:%d]]", logFilename, clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    FILE *logFile = fopen(logFilename, "ab+");
+    if (!logFile) {
+        so_error("SD9.3", "Erro ao abrir ficheiro de log");
+        sd11_EncerraServidorDedicado();
+    }
+
+    *pposicaoLogfile = ftell(logFile);
+    time_t now = time(NULL);
+    strftime(plogItem->dataEntrada, sizeof(plogItem->dataEntrada), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    fwrite(plogItem, sizeof(LogItem), 1, logFile);
+    fclose(logFile);
+
 
     so_debug("> [*pposicaoLogfile:%ld, *plogItem:[%s:%s:%c:%s:%s:%s]]", *pposicaoLogfile, plogItem->viatura.matricula, plogItem->viatura.pais, plogItem->viatura.categoria, plogItem->viatura.nomeCondutor, plogItem->dataEntrada, plogItem->dataSaida);
 }
@@ -662,7 +746,9 @@ void sd9_3_EscreveLogEntradaViatura(char *logFilename, Estacionamento clientRequ
 void sd10_1_AguardaCheckout() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    pause(); // Aguarda o sinal do cliente
+    so_success("SD10.1", "SD: A viatura %s deseja sair do parque", clientRequest.viatura.matricula);
+
 
     so_debug(">");
 }
@@ -676,7 +762,20 @@ void sd10_1_AguardaCheckout() {
 void sd10_2_EscreveLogSaidaViatura(char *logFilename, long posicaoLogfile, LogItem logItem) {
     so_debug("< [@param logFilename:%s, posicaoLogfile:%ld, logItem:[%s:%s:%c:%s:%s:%s]]", logFilename, posicaoLogfile, logItem.viatura.matricula, logItem.viatura.pais, logItem.viatura.categoria, logItem.viatura.nomeCondutor, logItem.dataEntrada, logItem.dataSaida);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    FILE *logFile = fopen(logFilename, "rb+");
+    if (!logFile) {
+        so_error("SD10.2", "Erro ao abrir ficheiro de log");
+        sd11_EncerraServidorDedicado();
+    }
+
+    fseek(logFile, posicaoLogfile, SEEK_SET);
+    time_t now = time(NULL);
+    strftime(logItem.dataSaida, sizeof(logItem.dataSaida), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    fwrite(&logItem, sizeof(LogItem), 1, logFile);
+    fclose(logFile);
+
+    so_success("SD10.2", "SD: Atualizei log na posição %ld: Saída Cliente %s em %s", posicaoLogfile, logItem.viatura.matricula, logItem.dataSaida);
+
 
     so_debug(">");
 }
@@ -702,7 +801,13 @@ void sd11_EncerraServidorDedicado() {
 void sd11_1_LibertaLugarViatura(Estacionamento *lugaresEstacionamento, int indexClienteBD) {
     so_debug("< [@param lugaresEstacionamento:%p, indexClienteBD:%d]", lugaresEstacionamento, indexClienteBD);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    if (indexClienteBD >= 0) {
+        lugaresEstacionamento[indexClienteBD].pidCliente = DISPONIVEL;
+        so_success("SD11.1", "SD: Libertei Lugar: %d", indexClienteBD);
+    } else {
+        so_error("SD11.1", "Erro ao liberar lugar: %d", indexClienteBD);
+    }
+
 
     so_debug(">");
 }
@@ -714,7 +819,13 @@ void sd11_1_LibertaLugarViatura(Estacionamento *lugaresEstacionamento, int index
 void sd11_2_EnviaSighupAoClienteETermina(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    if (kill(clientRequest.pidCliente, SIGHUP) == -1) {
+        so_error("SD11.2", "Erro ao enviar SIGHUP ao Cliente PID %d", clientRequest.pidCliente);
+        exit(0);
+    } else {
+        so_success("SD11.2", "SD: Shutdown");
+        exit(0); 
+    }
 
     so_debug(">");
 }
@@ -726,7 +837,9 @@ void sd11_2_EnviaSighupAoClienteETermina(Estacionamento clientRequest) {
 void sd12_TrataSigusr2(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    so_success("SD12", "SD: Recebi pedido do Servidor para terminar");
+    sd11_EncerraServidorDedicado();
+
 
     so_debug(">");
 }
@@ -738,7 +851,7 @@ void sd12_TrataSigusr2(int sinalRecebido) {
 void sd13_TrataSigusr1(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    so_success("SD13", "SD: Recebi pedido do Cliente para terminar o estacionamento");
 
     so_debug(">");
 }
