@@ -247,7 +247,10 @@ void c3_ProgramaAlarme(int segundos) {
 void c4_1_EsperaRespostaServidor() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    pause();  // Espera por um sinal (ex: SIGUSR1 do Servidor Dedicado)
+
+    so_success("C4.1", "Check-in realizado com sucesso");
+
 
     so_debug(">");
 }
@@ -258,7 +261,11 @@ void c4_1_EsperaRespostaServidor() {
 void c4_2_DesligaAlarme() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+   // Cancela o alarme
+   alarm(0);
+
+   // Indica sucesso
+   so_success("C4.2", "Desliguei alarme");
 
     so_debug(">");
 }
@@ -269,7 +276,18 @@ void c4_2_DesligaAlarme() {
 void c4_3_InputEsperaCheckout() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    char input[10]; // Buffer para armazenar a entrada do utilizador
+
+    while (1) {
+        printf("Escreve a palavra 'sair' para terminar o estacionamento: ");
+        so_gets(input, sizeof(input)); // Lê a entrada do utilizador
+
+        // Verifica se o utilizador escreveu "sair"
+        if (strcmp(input, "sair") == 0) {
+            so_success("C4.3", "Utilizador pretende terminar estacionamento");
+            c5_EncerraCliente();
+        }
+    }
 
     so_debug(">");
 }
@@ -280,7 +298,11 @@ void c4_3_InputEsperaCheckout() {
 void c5_EncerraCliente() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Envia SIGUSR1 ao Servidor Dedicado
+    c5_1_EnviaSigusr1AoServidor(clientRequest);
+
+    // Aguarda resposta do Servidor Dedicado e termina
+    c5_2_EsperaRespostaServidorETermina();
 
     so_debug(">");
 }
@@ -292,7 +314,13 @@ void c5_EncerraCliente() {
 void c5_1_EnviaSigusr1AoServidor(Estacionamento clientRequest) {
     so_debug("< [@param clientRequest:[%s:%s:%c:%s:%d:%d]]", clientRequest.viatura.matricula, clientRequest.viatura.pais, clientRequest.viatura.categoria, clientRequest.viatura.nomeCondutor, clientRequest.pidCliente, clientRequest.pidServidorDedicado);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Envia o sinal SIGUSR1 ao Servidor Dedicado
+    if (kill(clientRequest.pidServidorDedicado, SIGUSR1) == -1) {
+        so_error("C5.1", "Erro ao enviar SIGUSR1 ao Servidor Dedicado");
+        exit(1);
+    }
+
+    so_success("C5.1", "Sinal SIGUSR1 enviado ao Servidor Dedicado");
 
     so_debug(">");
 }
@@ -303,7 +331,12 @@ void c5_1_EnviaSigusr1AoServidor(Estacionamento clientRequest) {
 void c5_2_EsperaRespostaServidorETermina() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Aguarda por um sinal do Servidor Dedicado
+    pause();
+
+    // Após receber o sinal, indica sucesso e termina
+    so_success("C5.2", "Resposta do Servidor Dedicado recebida. Cliente encerrado.");
+    exit(0);
 
     so_debug(">");
 }
@@ -317,7 +350,14 @@ void c5_2_EsperaRespostaServidorETermina() {
  void c6_TrataSigusr1(int sinalRecebido, siginfo_t *siginfo, void *context) {
     so_debug("< [@param sinalRecebido:%d, siginfo:%p, context:%p]", sinalRecebido, siginfo, context);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Atualiza o PID do Servidor Dedicado no pedido do Cliente
+    clientRequest.pidServidorDedicado = siginfo->si_pid;
+
+    // Indica sucesso
+    so_success("C6", "Check-in concluído com sucesso pelo Servidor Dedicado %d", siginfo->si_pid);
+
+    // Desbloqueia o passo C4
+    recebeuRespostaServidor = TRUE;
 
     so_debug(">");
 }
@@ -329,7 +369,9 @@ void c5_2_EsperaRespostaServidorETermina() {
 void c7_TrataSighup(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Indica sucesso e termina o Cliente
+    so_success("C7", "Estacionamento terminado");
+    exit(0);
 
     so_debug(">");
 }
@@ -341,7 +383,9 @@ void c7_TrataSighup(int sinalRecebido) {
 void c8_TrataCtrlC(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Indica sucesso e vai para o passo C5
+    so_success("C8", "Cliente: Shutdown");
+    c5_EncerraCliente();
 
     so_debug(">");
 }
@@ -353,7 +397,9 @@ void c8_TrataCtrlC(int sinalRecebido) {
 void c9_TrataAlarme(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Indica erro e termina o Cliente
+    so_error("C9", "Cliente: Timeout");
+    exit(0); //não percebo porque o codigo do exit é zero, se se trata de uma chamada tratada como erro
 
     so_debug(">");
 }
