@@ -33,10 +33,17 @@ int *tarifaAtual = NULL;                // Inteiro definido pela entidade extern
  * @param  argv (I) array de lugares de estacionamento que irá servir de BD
  * @return Success (0) or not (<> 0)
  */
+
+
 int main(int argc, char *argv[]) {
     so_debug("<");
 
+    //Iniciação do Servidor: Se encontrar algum erro, dá so_error (e.g., so_error("S1.1", "<erro>")) e termina o Servidor. 
+    //  Caso contrário, dá so_success (e.g., so_success("S1.2", "<mensagem de sucesso>")).
     s1_IniciaServidor(argc, argv);
+
+    //Ciclo 1: Funcionamento principal do processo Servidor: 
+    // Em caso de qualquer erro, dá so_error e segue para o passo S4 (encerramento do Servidor).
     s2_MainServidor();
 
     so_error("Servidor", "O programa nunca deveria ter chegado a este ponto!");
@@ -53,10 +60,27 @@ int main(int argc, char *argv[]) {
 void s1_IniciaServidor(int argc, char *argv[]) {
     so_debug("<");
 
+    // Recebe como argumento do utilizador a dimensão do parque de 
+    // estacionamento (dimensaoMaximaParque).
     s1_1_ObtemDimensaoParque(argc, argv, &dimensaoMaximaParque);
+    // Arma os sinais a serem tratados pelo Servidor, para lidar com o atalho <CTRL+C> (ver S3), 
+    // e para lidar com a finalização de cada Servidor Dedicado (ver S5).
     s1_2_ArmaSinaisServidor();
+    // Cria a Message Queue (MSG) do projeto, com a KEY IPC_KEY: Se a MSG já existia, remove-a e cria 
+    // de novo.
     s1_3_CriaMsgQueue(IPC_KEY, &msgId);
+    // Cria o grupo de semáforos (SEM) necessários para o projeto, com a KEY IPC_KEY: Se o grupo SEM 
+    // já existia, remove-o e cria um novo com quatro semáforos: dois semáforos do tipo MutEx, 
+    // SEM_MUTEX_BD e SEM_MUTEX_LOGFILE, que deverão ser iniciados de forma correspondente, 
+    // um semáforo do tipo Barreira, SEM_SRV_DEDICADOS, que será iniciado com o valor 0, 
+    // e outro semáforo para controlar o número de lugares do parque, SEM_LUGARES_PARQUE, 
+    // que será iniciado com o valor dimensaoMaximaParque.
     s1_4_CriaGrupoSemaforos(IPC_KEY, &semId);
+    // Cria o parque de estacionamento (i.e., a base de dados correspondente ao array 
+    // lugaresEstacionamento) com a dimensaoMaximaParque, numa Shared Memory (SHM) IPC 
+    // com a KEY IPC_KEY definida em defines.h: Se a SHM já existia com o tamanho correto, 
+    // apenas liga-se a ela. Caso contrário, cria a SHM, e, apenas nesse caso, inicia o array 
+    // com todos os lugares disponíveis (pidCliente=DISPONIVEL).
     s1_5_CriaBD(IPC_KEY, &shmId, dimensaoMaximaParque, &lugaresEstacionamento);
 
     so_debug(">");
@@ -70,8 +94,25 @@ void s1_IniciaServidor(int argc, char *argv[]) {
  */
 void s1_1_ObtemDimensaoParque(int argc, char *argv[], int *pdimensaoMaximaParque) {
     so_debug("< [@param argc:%d, argv:%p]", argc, argv);
+    
+    // verifica se foram passados 2 e so dois argc (o nome do porgrama mais argv[1])
+    if (argc != 2) { // verifica se foram passados 2 e so dois argc (o nome do porgrama mais argv[1])
+        so_error("S1.1", "Número de argumentos inválido");
+        exit(1);
+    }
+    //
+    char *endptr;
+    int valor = strtol(argv[1], &endptr, 10); 
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    if (*endptr != '\0' || valor <= 0) { 
+        so_error("S1.1", "O valor passado não é válido. Dimensão tem que ser um nº inteiro superior a 0");
+        exit(1);
+    }
+
+    *pdimensaoMaximaParque = valor;
+
+    so_success("S1.1", "Argumento validado com sucesso");
+
 
     so_debug("> [@return *pdimensaoMaximaParque:%d]", *pdimensaoMaximaParque);
 }
@@ -82,7 +123,19 @@ void s1_1_ObtemDimensaoParque(int argc, char *argv[], int *pdimensaoMaximaParque
 void s1_2_ArmaSinaisServidor() {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // armar o sinal para reagir de acordo com s3_TrataCtrlC (handler do sinal)
+    if (signal(SIGINT, s3_TrataCtrlC) == SIG_ERR) {
+        so_error("S1.2", "Erro ao armar o sinal SIGINT");
+        exit(1);
+    }
+
+     // armar o sinal para reagir de acordo com s5_TrataTerminouServidorDedicado (handler do sinal)
+    if (signal(SIGCHLD, s5_TrataTerminouServidorDedicado) == SIG_ERR) {
+        so_error("S1.2", "Erro ao armar SIGCHLD");
+        exit(1);
+    }
+    
+    so_success("S1.2", "Sinais SIGINT e SIGCHLD armados com sucesso");
 
     so_debug(">");
 }
@@ -95,7 +148,31 @@ void s1_2_ArmaSinaisServidor() {
 void s1_3_CriaMsgQueue(key_t ipcKey, int *pmsgId) {
     so_debug("< [@param ipcKey:0x0%x]", ipcKey);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    //tenta criar a Message Queue com a chave IPC_KEY
+    int msgid = msgget(ipcKey, IPC_CREAT | IPC_EXCL | 0666);
+
+    // verifica se a criação da MSQ falhou e se essa falha se deve a MSQ já existente
+     if (msgid == -1 && errno == EEXIST) {
+        //a falha deveu-se ao facto de que MSQ já existir
+        //obtemos o id associada à MSQ existente
+        msgid = msgget(ipcKey, 0);
+        // se não der erro, então apaga-se a MSQ existente
+        if (msgid != -1) {
+            msgctl(msgid, IPC_RMID, NULL);
+            so_success("S1.3", "Message Queue já existente, eliminada com sucesso");
+        }
+        // tenta criar-se a MSQ novamente
+        msgid = msgget(ipcKey, IPC_CREAT | IPC_EXCL | 0666);
+    }
+    // verifica se a criação da MSQ feita na passo anterior falhou
+    if (msgid == -1) {
+        so_error("S1.3", "Erro ao criar Message Queue");
+        exit(1);
+    }
+    // guarda o id da MSQ criada na variável global msgId
+    // (através do ponteiro pmsgId)
+    *pmsgId = msgid;
+    so_success("S1.3", "Message Queue criada com sucesso");
 
     so_debug("> [@return *pmsgId:%d]", *pmsgId);
 }
@@ -107,8 +184,37 @@ void s1_3_CriaMsgQueue(key_t ipcKey, int *pmsgId) {
  */
  void s1_4_CriaGrupoSemaforos(key_t ipcKey, int *psemId) {
     so_debug("< [@param ipcKey:0x0%x]", ipcKey);
+    
+    // tenta criar a Grupo de Semáforos com a chave IPC_KEY (no meu caso 0xa82442)
+    int semid = semget(ipcKey, 4, IPC_CREAT | IPC_EXCL | 0666);
+    // verifica se já existe grupo de semáfotos associado ao ipcKey criado
+    // se sim, então apaga-o e cria-o novamente
+    if (semid == -1 && errno == EEXIST) {
+        //a falha se deveu ao facto de que grupo de semáforos já existe,
+        // vai buscra o id associada ao ipcKey
+        semid = semget(ipcKey, 0, 0);
+        if (semid != -1) {
+            // senão der erro, apaga o conjunto de semáforos existentes
+            semctl(semid, 0, IPC_RMID);
+            so_success("S1.4", "Grupo de semáforos JÁ EXISTENTE, eliminado com sucesso");
+        }
+        // após eliminar p grupo existente, cria um novo conjunto com 4 sems associado a ipcKey
+        semid = semget(ipcKey, 4, IPC_CREAT | IPC_EXCL | 0666);
+    }
+    // se o passo anterior falhar, mostra mensagem de erro e termina o programa
+    if (semid == -1) {
+        so_error("S1.4", "Erro ao criar grupo de semáforos");
+        exit(1);
+    }
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    // Inicializar cada semáforo 
+    semctl(semid, SEM_MUTEX_BD, SETVAL, SEM_MUTEX_INITIAL_VALUE);        // SEM_MUTEX_BD=1
+    semctl(semid, SEM_MUTEX_LOGFILE, SETVAL, SEM_MUTEX_INITIAL_VALUE);   // SEM_MUTEX_LOGFILE=1
+    semctl(semid, SEM_SRV_DEDICADOS, SETVAL, 0);                         // SEM_SRV_DEDICADOS=0
+    semctl(semid, SEM_LUGARES_PARQUE, SETVAL, dimensaoMaximaParque);     // SEM_LUGARES_PARQUE=imensaoMaximaParque
+
+    *psemId = semid;
+    so_success("S1.4", "Grupo de semáforos CRIADO e INICIALIZADO com sucesso");
 
     so_debug("> [@return *psemId:%d]", *psemId);
 }
@@ -123,8 +229,76 @@ void s1_3_CriaMsgQueue(key_t ipcKey, int *pmsgId) {
 void s1_5_CriaBD(key_t ipcKey, int *pshmId, int dimensaoMaximaParque, Estacionamento **plugaresEstacionamento) {
     so_debug("< [@param ipcKey:0x0%x, dimensaoMaximaParque:%d]", ipcKey, dimensaoMaximaParque);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+   int shm_tamanho = dimensaoMaximaParque * sizeof(Estacionamento);
 
+    // tenta aceder à SHM existente
+    int shmId = shmget(ipcKey, 0, 0);
+
+    if (shmId != -1) {
+        // SHM existe, verificar tamanho
+        struct shmid_ds info;
+        if (shmctl(shmId, IPC_STAT, &info) == -1) {
+            so_error("S1.5", "Erro ao obter info da SHM existente");
+            exit(1);
+        }
+        if (info.shm_segsz != shm_tamanho) {
+            // Tamanho diferente, remove e cria de novo
+            if (shmctl(shmId, IPC_RMID, NULL) == -1) {
+                so_error("S1.5", "Erro ao remover SHM com tamanho diferente");
+                exit(1);
+            }
+            shmId = shmget(ipcKey, shm_tamanho, IPC_CREAT | IPC_EXCL | 0666);
+            if (shmId == -1) {
+                so_error("S1.5", "Erro ao criar NOVA SHM");
+                exit(1);
+            }
+
+            *pshmId = shmId;
+            *plugaresEstacionamento = (Estacionamento *)shmat(shmId, NEW_ADDRESS, 0);
+            if (*plugaresEstacionamento == SHMAT_ERROR) {
+                so_error("S1.5", "Erro ao fazer attach à nova SHM");
+                exit(1);
+            }
+            // Inicializar todos os lugares como livres (pidCliente = 0)
+            for (int i = 0; i < dimensaoMaximaParque; i++) {
+                (*plugaresEstacionamento)[i].pidCliente = DISPONIVEL;
+            }
+            so_success("S1.5", "SHM criada DE NOVO e lugares inicializados como livres");
+        } else {
+            // Tamanho correto, só faz attach
+            *pshmId = shmId;
+            *plugaresEstacionamento = (Estacionamento *)shmat(shmId, NEW_ADDRESS, 0);
+            if (*plugaresEstacionamento == SHMAT_ERROR) {
+                so_error("S1.5", "Erro ao fazer attach à SHM existente");
+                exit(1);
+            }
+
+
+            so_success("S1.5", "Ligado à SHM existente com sucesso");
+        }
+    } else {
+        // SHM NÃO EXISTE, cria e inicializa
+        shmId = shmget(ipcKey, shm_tamanho, IPC_CREAT | IPC_EXCL | 0666);
+        if (shmId == -1) {
+            so_error("S1.5", "Erro ao criar SHM");
+            exit(1);
+        }
+
+        *pshmId = shmId;
+        *plugaresEstacionamento = (Estacionamento *)shmat(shmId, NEW_ADDRESS, 0);
+
+        if (*plugaresEstacionamento == SHMAT_ERROR) {
+            so_error("S1.5", "Erro ao fazer attach à nova SHM");
+            exit(1);
+        }
+
+        for (int i = 0; i < dimensaoMaximaParque; i++) {
+            (*plugaresEstacionamento)[i].pidCliente = DISPONIVEL;
+        }
+        
+        so_success("S1.5", "Sem SHM anterior. SHM criada e com array inicializado com lugares livres");
+    }
+    
     so_debug("> [@return *pshmId:%d, *plugaresEstacionamento:%p]", *pshmId, *plugaresEstacionamento);
 }
 
@@ -132,11 +306,19 @@ void s1_5_CriaBD(key_t ipcKey, int *pshmId, int dimensaoMaximaParque, Estacionam
  * @brief s2_MainServidor Ler a descrição da tarefa S2 no enunciado.
  *        OS ALUNOS NÃO DEVERÃO ALTERAR ESTA FUNÇÃO
  */
-void s2_MainServidor() {
+ // Ciclo 1: Funcionamento principal do processo Servidor: Em caso de qualquer erro, dá so_error 
+ // e segue para o passo S4 (encerramento do Servidor).
+ void s2_MainServidor() {
     so_debug("<");
 
     while (TRUE) {
+        // Lê da MSG uma mensagem do tipo MSGTYPE_LOGIN para clientRequest. 
+        // Dá so_success "<matricula> <pidCliente>". 
+        // Se receber um sinal, trata-o da forma esperada, e retoma o funcionamento normal.
         s2_1_LePedidoCliente(msgId, &clientRequest);
+        // Cria um processo Servidor Dedicado. Na sequência, o novo processo Servidor Dedicado 
+        // dá so_success "SD: Nasci com PID <pidServidorDedicado>" e segue para o passo SD7, 
+        // enquanto que o processo Servidor dá so_success "Servidor: Iniciei SD <pidServidorDedicado>", e retoma o Ciclo 1 no passo S2.
         s2_2_CriaServidorDedicado(&nrServidoresDedicados);
     }
 
@@ -151,9 +333,15 @@ void s2_MainServidor() {
 void s2_1_LePedidoCliente(int msgId, MsgContent *pclientRequest) {
     so_debug("< [@param msgId:%d]", msgId);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+     // Lê da MSG uma mensagem do tipo MSGTYPE_LOGIN
+    if (msgrcv(msgId, pclientRequest, sizeof(MsgContent) - sizeof(long), MSGTYPE_LOGIN, 0) == -1) {
+        so_error("S2.1", "Erro ao ler pedido do cliente");
+        s4_EncerraServidor();
+        exit(1);
+    }
+    so_success("S2.1", "%s %d", pclientRequest->msgData.est.viatura.matricula, pclientRequest->msgData.est.pidCliente);
 
-    sleep(10);  // TEMPORÁRIO, os alunos deverão comentar este statement apenas
+    //sleep(10);  // TEMPORÁRIO, os alunos deverão comentar este statement apenas
                 // depois de terem a certeza que não terão uma espera ativa
 
     so_debug("> [@return *pclientRequest:[%s:%s:%c:%s:%d.%d]]", pclientRequest->msgData.est.viatura.matricula, pclientRequest->msgData.est.viatura.pais, pclientRequest->msgData.est.viatura.categoria, pclientRequest->msgData.est.viatura.nomeCondutor, pclientRequest->msgData.est.pidCliente, pclientRequest->msgData.est.pidServidorDedicado);
@@ -166,7 +354,22 @@ void s2_1_LePedidoCliente(int msgId, MsgContent *pclientRequest) {
 void s2_2_CriaServidorDedicado(int *pnrServidoresDedicados) {
     so_debug("<");
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+      pid_t pid = fork();
+    if (pid < 0) {
+        so_error("S2.2", "Erro ao criar Servidor Dedicado");
+        s4_EncerraServidor();
+        exit(1);
+    }
+    if (pid == 0) {
+        // Processo filho: Servidor Dedicado
+        so_success("S2.2", "SD: Nasci com PID %d", getpid());
+        sd7_MainServidorDedicado();
+        exit(0); // Termina o processo filho após completar a tarefa do Servidor Dedicado
+    } else {
+        // Processo pai: Servidor principal
+        (*pnrServidoresDedicados)++;
+        so_success("S2.2", "Servidor: Iniciei SD %d", pid);
+    }
 
     so_debug("> [@return *pnrServidoresDedicados:%d", *pnrServidoresDedicados);
 }
@@ -178,7 +381,9 @@ void s2_2_CriaServidorDedicado(int *pnrServidoresDedicados) {
 void s3_TrataCtrlC(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    so_success("S3", "Servidor: Start Shutdown");
+    s4_EncerraServidor();
+    exit(0);
 
     so_debug(">");
 }
@@ -205,7 +410,23 @@ void s4_EncerraServidor() {
 void s4_1_TerminaServidoresDedicados(Estacionamento *lugaresEstacionamento, int dimensaoMaximaParque) {
     so_debug("< [@param lugaresEstacionamento:%p, dimensaoMaximaParque:%d]", lugaresEstacionamento, dimensaoMaximaParque);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+   // ENTRA NA ZONA CRÍTICA
+    struct sembuf op_down = {SEM_MUTEX_BD, SEM_DOWN, NO_FLAGS};
+    semop(semId, &op_down, 1);
+
+    for (int i = 0; i < dimensaoMaximaParque; i++) {
+        int pidSD = lugaresEstacionamento[i].pidServidorDedicado;
+        if (pidSD > 0) {
+            kill(pidSD, SIGUSR2);
+        }
+    }
+
+    // SAI DA ZONA CRÍTICA
+    struct sembuf op_up = {SEM_MUTEX_BD, 1, 0};
+    semop(semId, &op_up, 1);
+
+    so_success("S4.1", "SIGUSR2 enviado a todos os Servidores Dedicados");
+
 
     so_debug(">");
 }
@@ -217,7 +438,17 @@ void s4_1_TerminaServidoresDedicados(Estacionamento *lugaresEstacionamento, int 
 void s4_2_AguardaFimServidoresDedicados(int nrServidoresDedicados) {
     so_debug("< [@param nrServidoresDedicados:%d]", nrServidoresDedicados);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    struct sembuf op;
+    op.sem_num = SEM_SRV_DEDICADOS;
+    op.sem_op = SEM_DOWN * nrServidoresDedicados; // SEM_DOWN está definido como -1
+    op.sem_flg = NO_FLAGS;
+
+    if (semop(semId, &op, 1) == -1) {
+        so_error("S4.2", "Erro ao aguardar fim dos Servidores Dedicados");
+        return;
+    }
+
+    so_success("S4.2", "Todos os Servidores Dedicados terminaram");
 
     so_debug(">");
 }
@@ -231,7 +462,16 @@ void s4_2_AguardaFimServidoresDedicados(int nrServidoresDedicados) {
 void s4_3_ApagaElementosIPCeTermina(int shmId, int semId, int msgId) {
     so_debug("< [@param shmId:%d, semId:%d, msgId:%d]", shmId, semId, msgId);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+
+   // Apaga a SHM, SEM e MSG, ignorando erros
+    shmctl(shmId, IPC_RMID, NULL);
+    semctl(semId, 0, IPC_RMID);
+    msgctl(msgId, IPC_RMID, NULL);
+
+    so_success("S4.3", "Servidor: End Shutdown");
+    exit(0);
+
+    
 
     so_debug(">");
 }
@@ -243,11 +483,21 @@ void s4_3_ApagaElementosIPCeTermina(int shmId, int semId, int msgId) {
 void s5_TrataTerminouServidorDedicado(int sinalRecebido) {
     so_debug("< [@param sinalRecebido:%d]", sinalRecebido);
 
-    // Substituir este comentário pelo código da função a ser implementado pelo aluno
+    int status;
+    pid_t pid;
+    // Espera por todos os filhos terminados (pode haver mais do que um)
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        nrServidoresDedicados--; // Atualiza o número de SD ativos
+        so_success("S5", "Servidor: Confirmo que terminou o SD %d", pid);
+        // Incrementa o semáforo da barreira
+        struct sembuf op = {SEM_SRV_DEDICADOS, 1, 0};
+        semop(semId, &op, 1);
+    }
 
     so_debug("> [@return nrServidoresDedicados:%d", nrServidoresDedicados);
 }
 
+// NÃO FIZ A PARTIR DAQUI
 /**
  * @brief sd7_ServidorDedicado Ler a descrição da tarefa SD7 no enunciado
  *        OS ALUNOS NÃO DEVERÃO ALTERAR ESTA FUNÇÃO.
